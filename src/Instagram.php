@@ -10,6 +10,7 @@ class Instagram
     private $ig_did;
     private $csrftoken;
     private $mid;
+    private $userid;
 
     public function __construct()
     {
@@ -47,30 +48,69 @@ class Instagram
         );
     }
 
-    public function infoData()
+    public function infoData($ig_did, $csrftoken, $mid, $userid = null, $session = null, $useragent)
     {
-        return
-            [
-                'Accept: */*',
-                'Accept-Language: en-US,en;q=0.5',
-                'Accept-Encoding: gzip, deflate, br',
-                'X-Instagram-AJAX: cc6f59f85f33',
-                'X-IG-App-ID: 936619743392459',
-                'X-IG-WWW-Claim: 0',
-                'Content-Type: application/x-www-form-urlencoded',
-                'X-Requested-With: XMLHttpRequest',
-                'Origin: https://www.instagram.com',
-                'Connection: keep-alive',
-                'Referer: https://www.instagram.com/accounts/emailsignup/',
-                'Pragma: no-cache',
-                'Cache-Control: no-cache',
-            ];
+        if ($userid && $session) {
+            return
+                [
+                    'Accept: */*',
+                    'Accept-Language: en-US,en;q=0.5',
+                    'Accept-Encoding: gzip, deflate, br',
+                    'cookie: ig_did=' . $ig_did . '; mid=' . $mid . '; ig_nrcb=1; csrftoken=' . $csrftoken . '; ds_user_id=' . $userid . '; sessionid=' . $session . '; rur=NAO',
+                    'x-csrftoken: ' . $csrftoken,
+                    'X-Instagram-AJAX: 9d79bd80d783-hot',
+                    'X-IG-App-ID: 936619743392459',
+                    'X-IG-WWW-Claim: 0',
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'X-Requested-With: XMLHttpRequest',
+                    'Origin: https://www.instagram.com',
+                    'Connection: keep-alive',
+                    'Referer: https://www.instagram.com',
+                    'Pragma: no-cache',
+                    'user-agent: ' . $useragent,
+                    'Cache-Control: no-cache',
+                ];
+        } else {
+            return
+                [
+                    'Host: www.instagram.com',
+                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:80.0) Gecko/20100101 Firefox/80.0',
+                    'Accept: */*',
+                    'Accept-Language: id,en-US;q=0.7,en;q=0.3',
+                    'X-CSRFToken: ' . $csrftoken . '',
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'X-Requested-With: XMLHttpRequest',
+                    'Origin: https://www.instagram.com',
+                    'Connection: close',
+                    'Referer: https://www.instagram.com/accounts/emailsignup/',
+                    'Cookie: Cookie: ig_did=' . $ig_did . '; mid=' . $mid . '; csrftoken=' . $csrftoken . '',
+                ];
+        }
     }
 
-    public function generateHeader($proxy = null)
+    public function generateHeader($proxy = null): bool
     {
-        $url = 'https://www.instagram.com/data/shared_data/?__a=1';
-        $cURL = $this->curl($url, $this->UserAgent);
-        return $cURL;
+        $cURL = $this->curl('https://www.instagram.com/data/shared_data/?__a=1', $this->UserAgent);
+        $this->ig_did = $cURL[2]['ig_did'];
+        $this->csrftoken = $cURL[2]['csrftoken'];
+        $this->mid = $cURL[2]['mid'];
+        return true;
+    }
+
+    public function login_account($username, $password)
+    {
+        $this->generateHeader();
+        $headers = $this->infoData($this->ig_did, $this->csrftoken, $this->mid, 0, 0, $this->UserAgent);
+        $enc = date_timestamp_get(date_create());
+        $data = 'username=' . $username . '&enc_password=#PWD_INSTAGRAM_BROWSER:0:' . $enc . ':' . $password . '&queryParams=%7B%7D&optIntoOneTap=true';
+        $login = $this->curl('https://www.instagram.com/accounts/login/ajax/', $this->UserAgent, $data, $headers);
+        $result = json_decode($login[1], true);
+        if (@$result['userId']) {
+            $sessionid = $login[2]['sessionid'];
+            $message = array('status' => true, 'userId' => $result['userId'], 'csrftoken' => $this->csrftoken, 'ig_did' => $this->ig_did, 'mid' => $this->mid, 'sessionid' => $sessionid);
+        } else {
+            $message = array('status' => false, 'message' => 'Sorry, your username/password is wrong. Please double check your instagram.');
+        }
+        return json_encode($message);
     }
 }
