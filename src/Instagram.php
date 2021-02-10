@@ -10,12 +10,20 @@ class Instagram
     private $ig_did;
     private $csrftoken;
     private $mid;
-    private $userid;
+    private $userId;
+    private $sessionId;
 
-    public function __construct()
+    public function __construct($useragent = null, $userId = null, $sessionid = null)
     {
-        $UA = new userAgent();
-        $this->UserAgent = $UA->generate();
+        if (!empty($userId) && !empty($sessionid)) {
+            $this->userId = $userId;
+            $this->sessionId = $sessionid;
+        } else if (!empty($useragent)) {
+            $this->UserAgent = $useragent;
+        } else {
+            $UA = new userAgent();
+            $this->UserAgent = $UA->generate();
+        }
     }
 
     public function curl($url, $useragent, $post = null, $headers = null, $proxy = null)
@@ -48,7 +56,7 @@ class Instagram
         );
     }
 
-    public function infoData($ig_did, $csrftoken, $mid, $userid = null, $session = null, $useragent)
+    public function HeaderId($ig_did, $csrftoken, $mid, $userid = null, $session = null, $useragent)
     {
         if ($userid && $session) {
             return
@@ -84,13 +92,18 @@ class Instagram
                     'Connection: close',
                     'Referer: https://www.instagram.com/accounts/emailsignup/',
                     'Cookie: Cookie: ig_did=' . $ig_did . '; mid=' . $mid . '; csrftoken=' . $csrftoken . '',
+                    'user-agent: ' . $useragent,
+
                 ];
         }
     }
 
     public function generateHeader($proxy = null): bool
     {
-        $cURL = $this->curl('https://www.instagram.com/data/shared_data/?__a=1', $this->UserAgent);
+        $header = [
+            'user-agent: ' . $this->UserAgent,
+        ];
+        $cURL = $this->curl('https://www.instagram.com/data/shared_data/?__a=1', $this->UserAgent, 0, $header);
         $this->ig_did = $cURL[2]['ig_did'];
         $this->csrftoken = $cURL[2]['csrftoken'];
         $this->mid = $cURL[2]['mid'];
@@ -100,17 +113,80 @@ class Instagram
     public function login_account($username, $password)
     {
         $this->generateHeader();
-        $headers = $this->infoData($this->ig_did, $this->csrftoken, $this->mid, 0, 0, $this->UserAgent);
+        $headers = $this->HeaderId($this->ig_did, $this->csrftoken, $this->mid, 0, 0, $this->UserAgent);
         $enc = date_timestamp_get(date_create());
         $data = 'username=' . $username . '&enc_password=#PWD_INSTAGRAM_BROWSER:0:' . $enc . ':' . $password . '&queryParams=%7B%7D&optIntoOneTap=true';
         $login = $this->curl('https://www.instagram.com/accounts/login/ajax/', $this->UserAgent, $data, $headers);
         $result = json_decode($login[1], true);
         if (@$result['userId']) {
             $sessionid = $login[2]['sessionid'];
-            $message = array('status' => true, 'userId' => $result['userId'], 'csrftoken' => $this->csrftoken, 'ig_did' => $this->ig_did, 'mid' => $this->mid, 'sessionid' => $sessionid);
+            $message = array('status' => true, 'userId' => $result['userId'], 'csrftoken' => $this->csrftoken, 'ig_did' => $this->ig_did, 'mid' => $this->mid, 'sessionid' => $sessionid, 'user_Agent' => $this->UserAgent);
+        } else if (@$login['message']) {
+            $message = array('status' => false, 'message' => 'Please check your account instagram checkpoint required.');
         } else {
             $message = array('status' => false, 'message' => 'Sorry, your username/password is wrong. Please double check your instagram.');
         }
         return json_encode($message);
+    }
+
+    public function logout_account()
+    {
+        $headers = $this->HeaderId($this->ig_did, $this->csrftoken, $this->mid, $this->userId, $this->sessionId, $this->UserAgent);
+        $data = 'one_tap_app_login=1';
+        $logout = $this->curl('https://www.instagram.com/accounts/logout/ajax/', $this->UserAgent, $data, $headers);
+        return $logout;
+    }
+
+    /**
+     * Get data Id (Photo/Username).
+     *
+     * @param string $url
+     *
+     * @return json|string
+     */
+
+    public function infoMedia($url)
+    {
+        $this->generateHeader();
+        $headers = $this->HeaderId($this->ig_did, $this->csrftoken, $this->mid, 0, 0, $this->UserAgent);
+        $getData = $this->curl($url . '?__a=1', $this->UserAgent, 0, $headers);
+        return json_decode($getData[1], true);
+    }
+
+    /**
+     * Get data Id (Photo/Username).
+     *
+     * @param string $url
+     *
+     * @return json|string
+     */
+
+    private function usr2id(string $username): ?int
+    {
+        $user_id = file_get_contents('https://www.instagram.com/' . $username . '/');
+        $re      = '/sharedData\s=\s(.*[^\"]);<.script>/ixU';
+
+        preg_match_all($re, $user_id, $id_username, PREG_SET_ORDER);
+
+        $data = json_decode($id_username[0][1], true);
+
+        return $data['entry_data']['ProfilePage']['0']['graphql']['user']['id'];
+    }
+
+    public function likes_photo($mediaId)
+    {
+        $this->generateHeader();
+        $headers = $this->HeaderId($this->ig_did, $this->csrftoken, $this->mid, $this->userId, $this->sessionId, $this->UserAgent);
+        $likes = $this->curl('https://www.instagram.com/web/likes/' . $mediaId . '/like/', $this->UserAgent, 0, $headers)[1];
+        return $likes;
+    }
+
+    public function follow_user($username)
+    {
+        $getId = $this->usr2id($username);
+        $this->generateHeader();
+        $headers = $this->HeaderId($this->ig_did, $this->csrftoken, $this->mid, $this->userId, $this->sessionId, $this->UserAgent);
+        $follow = $this->curl('https://www.instagram.com/web/friendships/' . $getId . '/follow/', $this->UserAgent, 0, $headers)[1];
+        return $follow;
     }
 }
