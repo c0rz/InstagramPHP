@@ -2,7 +2,6 @@
 // error_reporting(1);
 
 require '../autoload.php';
-require 'mainconfig.php';
 
 use c0rz\InstagramPHP\Instagram;
 

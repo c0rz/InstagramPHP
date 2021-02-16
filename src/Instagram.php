@@ -189,4 +189,13 @@ class Instagram
         $follow = $this->curl('https://www.instagram.com/web/friendships/' . $getId . '/follow/', $this->UserAgent, 0, $headers)[1];
         return $follow;
     }
+
+    public function add_comment($mediaId, $comment)
+    {
+        $this->generateHeader();
+        $headers = $this->HeaderId($this->ig_did, $this->csrftoken, $this->mid, $this->userId, $this->sessionId, $this->UserAgent);
+        $data = "comment_text={$comment}&replied_to_comment_id=";
+        $comment = $this->curl('https://www.instagram.com/web/comments/' . $mediaId . '/add/', $this->UserAgent, $data, $headers)[1];
+        return $comment;
+    }
 }
